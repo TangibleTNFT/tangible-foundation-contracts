@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -39,7 +39,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
     using BytesLib for bytes;
 
     // ua can not send payload larger than this by default, but it can be changed by the ua owner
-    uint256 public constant DEFAULT_PAYLOAD_SIZE_LIMIT = 10000;
+    uint256 public constant DEFAULT_PAYLOAD_SIZE_LIMIT = 10_000;
 
     event SetPrecrime(address precrime);
     event SetTrustedRemote(uint16 _remoteChainId, bytes _path);
@@ -48,7 +48,6 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
 
     /// @custom:storage-location erc7201:layerzero.storage.LzApp
     struct LzAppStorage {
-        ILayerZeroEndpoint lzEndpoint;
         mapping(uint16 => bytes) trustedRemoteLookup;
         mapping(uint16 => mapping(uint16 => uint256)) minDstGasLookup;
         mapping(uint16 => uint256) payloadSizeLimitLookup;
@@ -65,43 +64,31 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
         }
     }
 
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    ILayerZeroEndpoint public immutable lzEndpoint;
+
     /**
-     * @dev Initializes the contract with the given `initialOwner` and LayerZero `endpoint`.
+     * @param endpoint Address of the LayerZero endpoint contract.
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor(address endpoint) {
+        lzEndpoint = ILayerZeroEndpoint(endpoint);
+    }
+
+    /**
+     * @dev Initializes the contract with the given `initialOwner`.
      *
      * Requirements:
      * - The function should only be called during the initialization process.
      *
      * @param initialOwner Address of the initial owner of the contract.
-     * @param endpoint Address of the LayerZero endpoint contract.
      */
-    function __LzApp_init(address initialOwner, address endpoint) internal onlyInitializing {
-        __LzApp_init_unchained(endpoint);
+    function __LzApp_init(address initialOwner) internal onlyInitializing {
+        __LzApp_init_unchained();
         __Ownable_init(initialOwner);
     }
 
-    /**
-     * @dev Initializes the contract's LayerZero endpoint without setting the owner.
-     * This function is separated to support upgradeability.
-     *
-     * Requirements:
-     * - The function should only be called during the initialization process.
-     *
-     * @param endpoint Address of the LayerZero endpoint contract.
-     */
-    function __LzApp_init_unchained(address endpoint) internal onlyInitializing {
-        LzAppStorage storage $ = _getLzAppStorage();
-        $.lzEndpoint = ILayerZeroEndpoint(endpoint);
-    }
-
-    /**
-     * @dev Returns the address of the LayerZero endpoint contract.
-     *
-     * @return endpoint Address of the LayerZero endpoint.
-     */
-    function lzEndpoint() public view returns (ILayerZeroEndpoint endpoint) {
-        LzAppStorage storage $ = _getLzAppStorage();
-        endpoint = $.lzEndpoint;
-    }
+    function __LzApp_init_unchained() internal onlyInitializing {}
 
     /**
      * @dev Returns the trusted path for a given remote chain ID.
@@ -168,7 +155,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
         LzAppStorage storage $ = _getLzAppStorage();
 
         // lzReceive must be called by the endpoint for security
-        require(_msgSender() == address($.lzEndpoint), "LzApp: invalid endpoint caller");
+        require(_msgSender() == address(lzEndpoint), "LzApp: invalid endpoint caller");
 
         bytes memory trustedRemote = $.trustedRemoteLookup[srcChainId];
         // if will still block the message pathway from (srcChainId, srcAddress). should not receive message from
@@ -222,7 +209,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
         bytes memory trustedRemote = $.trustedRemoteLookup[dstChainId];
         require(trustedRemote.length != 0, "LzApp: destination chain is not a trusted source");
         _checkPayloadSize(dstChainId, payload.length);
-        $.lzEndpoint.send{value: nativeFee}(
+        lzEndpoint.send{value: nativeFee}(
             dstChainId, trustedRemote, payload, refundAddress, zroPaymentAddress, adapterParams
         );
     }
@@ -303,8 +290,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
         view
         returns (bytes memory)
     {
-        LzAppStorage storage $ = _getLzAppStorage();
-        return $.lzEndpoint.getConfig(version, chainId, address(this), configType);
+        return lzEndpoint.getConfig(version, chainId, address(this), configType);
     }
 
     /**
@@ -323,8 +309,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
         override
         onlyOwner
     {
-        LzAppStorage storage $ = _getLzAppStorage();
-        $.lzEndpoint.setConfig(version, chainId, configType, config);
+        lzEndpoint.setConfig(version, chainId, configType, config);
     }
 
     /**
@@ -336,8 +321,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
      * @param version The version to be set for sending messages.
      */
     function setSendVersion(uint16 version) external override onlyOwner {
-        LzAppStorage storage $ = _getLzAppStorage();
-        $.lzEndpoint.setSendVersion(version);
+        lzEndpoint.setSendVersion(version);
     }
 
     /**
@@ -349,8 +333,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
      * @param version The version to be set for receiving messages.
      */
     function setReceiveVersion(uint16 version) external override onlyOwner {
-        LzAppStorage storage $ = _getLzAppStorage();
-        $.lzEndpoint.setReceiveVersion(version);
+        lzEndpoint.setReceiveVersion(version);
     }
 
     /**
@@ -363,8 +346,7 @@ abstract contract LzAppUpgradeable is OwnableUpgradeable, ILayerZeroReceiver, IL
      * @param srcAddress The address on the source chain for which message reception is to be resumed.
      */
     function forceResumeReceive(uint16 srcChainId, bytes calldata srcAddress) external override onlyOwner {
-        LzAppStorage storage $ = _getLzAppStorage();
-        $.lzEndpoint.forceResumeReceive(srcChainId, srcAddress);
+        lzEndpoint.forceResumeReceive(srcChainId, srcAddress);
     }
 
     /**

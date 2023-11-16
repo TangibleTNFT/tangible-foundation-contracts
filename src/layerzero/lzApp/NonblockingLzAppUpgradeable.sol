@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {ExcessivelySafeCall} from "@layerzerolabs/contracts/libraries/ExcessivelySafeCall.sol";
 
@@ -37,6 +37,12 @@ abstract contract NonblockingLzAppUpgradeable is LzAppUpgradeable {
     }
 
     /**
+     * @param endpoint The address of the LayerZero endpoint contract.
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor(address endpoint) LzAppUpgradeable(endpoint) {}
+
+    /**
      * @dev Initializes the contract, setting the initial owner and endpoint addresses.
      * Also chains the initialization process with the base `LzAppUpgradeable` contract.
      *
@@ -44,11 +50,10 @@ abstract contract NonblockingLzAppUpgradeable is LzAppUpgradeable {
      * - Can only be called during contract initialization.
      *
      * @param initialOwner The address that will initially own the contract.
-     * @param endpoint The address of the LayerZero endpoint contract.
      */
-    function __NonblockingLzApp_init(address initialOwner, address endpoint) internal onlyInitializing {
+    function __NonblockingLzApp_init(address initialOwner) internal onlyInitializing {
         __NonblockingLzApp_init_unchained();
-        __LzApp_init(initialOwner, endpoint);
+        __LzApp_init(initialOwner);
     }
 
     function __NonblockingLzApp_init_unchained() internal onlyInitializing {}
@@ -168,12 +173,18 @@ abstract contract NonblockingLzAppUpgradeable is LzAppUpgradeable {
         virtual
     {
         NonblockingLzAppStorage storage $ = _getNonblockingLzAppStorage();
+        mapping(uint64 => bytes32) storage _failedMessages = $.failedMessages[srcChainId][srcAddress];
+
+        // get the payload hash value
+        bytes32 payloadHash = _failedMessages[nonce];
+
         // assert there is message to retry
-        bytes32 payloadHash = $.failedMessages[srcChainId][srcAddress][nonce];
         require(payloadHash != bytes32(0), "NonblockingLzApp: no stored message");
         require(keccak256(payload) == payloadHash, "NonblockingLzApp: invalid payload");
+
         // clear the stored message
-        $.failedMessages[srcChainId][srcAddress][nonce] = bytes32(0);
+        payloadHash = bytes32(0);
+
         // execute the message. revert if it fails again
         _nonblockingLzReceive(srcChainId, srcAddress, nonce, payload);
         emit RetryMessageSuccess(srcChainId, srcAddress, nonce, payloadHash);

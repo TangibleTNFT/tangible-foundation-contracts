@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {IERC20, ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -19,22 +19,24 @@ import {OFTCoreUpgradeable} from "./OFTCoreUpgradeable.sol";
  */
 contract OFTUpgradeable is OFTCoreUpgradeable, ERC20Upgradeable, IOFT {
     /**
+     * @param endpoint The address of the LayerZero endpoint.
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor(address endpoint) OFTCoreUpgradeable(endpoint) {}
+
+    /**
      * @dev Initializes the OFT token with a given name and symbol.
      * It sets the state within this contract and also initializes the inherited ERC20 token with the given name and
      * symbol.
      * This function should only be called during the contract initialization phase.
      *
      * @param initialOwner The address of the initial owner.
-     * @param endpoint The address of the LayerZero endpoint.
      * @param name The name of the token.
      * @param symbol The symbol of the token.
      */
-    function __OFT_init(address initialOwner, address endpoint, string memory name, string memory symbol)
-        internal
-        onlyInitializing
-    {
+    function __OFT_init(address initialOwner, string memory name, string memory symbol) internal onlyInitializing {
         __OFT_init_unchained();
-        __OFTCore_init(initialOwner, endpoint);
+        __OFTCore_init(initialOwner);
         __ERC20_init(name, symbol);
     }
 

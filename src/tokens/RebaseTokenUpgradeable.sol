@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 
-import {RebaseTokenMath} from "./libraries/RebaseTokenMath.sol";
+import {RebaseTokenMath} from "../libraries/RebaseTokenMath.sol";
 
 /**
  * @title RebaseTokenUpgradeable
@@ -47,6 +47,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
     event RebaseDisabled(address indexed account);
 
     error AmountExceedsBalance(address account, uint256 balance, uint256 amount);
+    error RebaseOverflow();
 
     /**
      * @notice Initializes the RebaseTokenUpgradeable contract.
@@ -77,13 +78,18 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
         if ($.optOut[account] != disable) {
             uint256 balance = balanceOf(account);
-            $.optOut[account] = disable;
             if (balance != 0) {
                 if (disable) {
                     RebaseTokenUpgradeable._update(account, address(0), balance);
-                    ERC20Upgradeable._update(address(0), account, balance);
                 } else {
                     ERC20Upgradeable._update(account, address(0), balance);
+                }
+            }
+            $.optOut[account] = disable;
+            if (balance != 0) {
+                if (disable) {
+                    ERC20Upgradeable._update(address(0), account, balance);
+                } else {
                     RebaseTokenUpgradeable._update(address(0), account, balance);
                 }
             }
@@ -190,8 +196,10 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
 
     /**
      * @notice Updates the state of the contract during token transfers, mints, or burns.
-     * @dev This function adjusts the `totalShares` and individual `shares` of `from` and `to` addresses based on the
-     * rebasing status (`optOut`). It performs overflow and underflow checks where necessary.
+     * @dev This function adjusts the `totalShares` and individual `shares` of `from` and `to` addresses based on their
+     * rebasing status (`optOut`). When both parties have opted out of rebasing, the standard ERC20 `_update` is called
+     * instead. It performs overflow and underflow checks where necessary and delegates to the parent function when
+     * opt-out applies.
      *
      * @param from The address from which tokens are transferred or burned. Address(0) implies minting.
      * @param to The address to which tokens are transferred or minted. Address(0) implies burning.
@@ -199,34 +207,53 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      */
     function _update(address from, address to, uint256 amount) internal virtual override {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
+        bool optOutFrom = $.optOut[from];
+        bool optOutTo = $.optOut[to];
+        if (optOutFrom && optOutTo) {
+            ERC20Upgradeable._update(from, to, amount);
+            return;
+        }
         uint256 index = $.rebaseIndex;
         uint256 shares = amount.toShares($.rebaseIndex);
         if (from == address(0)) {
-            uint256 totalShares = $.totalShares + shares; // Overflow check required
-            _checkRebaseOverflow(totalShares, index);
-            $.totalShares = totalShares;
+            if (!optOutTo) {
+                uint256 totalShares = $.totalShares + shares; // Overflow check required
+                _checkRebaseOverflow(totalShares, index);
+                $.totalShares = totalShares;
+            }
         } else {
-            shares = _transferableShares(amount, from);
-            unchecked {
-                // Underflow not possible: `shares <= $.shares[from] <= totalShares`.
-                $.shares[from] -= shares;
+            if (optOutFrom) {
+                ERC20Upgradeable._update(from, address(0), amount);
+            } else {
+                shares = _transferableShares(amount, from);
+                unchecked {
+                    // Underflow not possible: `shares <= $.shares[from] <= totalShares`.
+                    $.shares[from] -= shares;
+                }
             }
         }
 
         if (to == address(0)) {
-            unchecked {
-                // Underflow not possible: `shares <= $.totalShares` or `shares <= $.shares[from] <= $.totalShares`.
-                $.totalShares -= shares;
+            if (!optOutFrom) {
+                unchecked {
+                    // Underflow not possible: `shares <= $.totalShares` or `shares <= $.shares[from] <= $.totalShares`.
+                    $.totalShares -= shares;
+                }
+                emit Transfer(from, address(0), shares.toTokens(index));
             }
         } else {
-            unchecked {
-                // Overflow not possible: `$.shares[to] + shares` is at most `$.totalShares`, which we know fits into a
-                // `uint256`.
-                $.shares[to] += shares;
+            if (optOutTo) {
+                // At this point we know that `from` has not opted out.
+                ERC20Upgradeable._update(address(0), to, amount);
+            } else {
+                unchecked {
+                    // Overflow not possible: `$.shares[to] + shares` is at most `$.totalShares`, which we know fits
+                    // into a `uint256`.
+                    $.shares[to] += shares;
+                }
+                emit Transfer(optOutFrom ? address(0) : from, to, shares.toTokens(index));
             }
         }
-
-        emit Transfer(from, to, amount);
     }
 
     /**
@@ -239,8 +266,12 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      * @param index The current rebase index.
      */
     function _checkRebaseOverflow(uint256 shares, uint256 index) private view {
-        // The condition inside `assert()` can never evaluate `false`, but `toTokens()` would throw an arithmetic
-        // exception in case we overflow, and that's all we need.
-        assert(shares.toTokens(index) + ERC20Upgradeable.totalSupply() <= type(uint256).max);
+        // Using an unchecked block to avoid overflow checks, as overflow will be handled explicitly.
+        uint256 _elasticSupply = shares.toTokens(index);
+        unchecked {
+            if (_elasticSupply + ERC20Upgradeable.totalSupply() < _elasticSupply) {
+                revert RebaseOverflow();
+            }
+        }
     }
 }
