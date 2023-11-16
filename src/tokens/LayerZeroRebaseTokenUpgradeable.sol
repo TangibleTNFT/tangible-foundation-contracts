@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
@@ -7,7 +7,7 @@ import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/
 import {BytesLib} from "@layerzerolabs/contracts/libraries/BytesLib.sol";
 import {OFTUpgradeable} from "@layerzerolabs/contracts-upgradeable/token/oft/v1/OFTUpgradeable.sol";
 
-import {RebaseTokenMath} from "./libraries/RebaseTokenMath.sol";
+import {RebaseTokenMath} from "../libraries/RebaseTokenMath.sol";
 import {CrossChainRebaseTokenUpgradeable} from "./CrossChainRebaseTokenUpgradeable.sol";
 import {RebaseTokenUpgradeable} from "./RebaseTokenUpgradeable.sol";
 
@@ -36,24 +36,27 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
     }
 
     /**
+     * @param endpoint The endpoint for Layer Zero operations.
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor(address endpoint) OFTUpgradeable(endpoint) {}
+
+    /**
      * @notice Initializes the LayerZeroRebaseTokenUpgradeable contract.
      * @dev This function is intended to be called once during the contract's deployment. It chains initialization logic
      * from `__LayerZeroRebaseToken_init_unchained`, `__CrossChainRebaseToken_init_unchained`, and `__OFT_init`.
      *
      * @param initialOwner The initial owner of the token contract.
-     * @param endpoint The endpoint for Layer Zero operations.
      * @param name The name of the token.
      * @param symbol The symbol of the token.
      */
-    function __LayerZeroRebaseToken_init(
-        address initialOwner,
-        address endpoint,
-        string memory name,
-        string memory symbol
-    ) internal onlyInitializing {
+    function __LayerZeroRebaseToken_init(address initialOwner, string memory name, string memory symbol)
+        internal
+        onlyInitializing
+    {
         __LayerZeroRebaseToken_init_unchained();
         __CrossChainRebaseToken_init_unchained();
-        __OFT_init(initialOwner, endpoint, name, symbol);
+        __OFT_init(initialOwner, name, symbol);
     }
 
     function __LayerZeroRebaseToken_init_unchained() internal onlyInitializing {}
@@ -98,7 +101,7 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
         if (from != msg.sender) {
             _spendAllowance(from, msg.sender, amount);
         }
-        if (isMainChain()) {
+        if (isMainChain) {
             _update(from, address(this), amount);
         } else {
             _update(from, address(0), amount);
@@ -118,7 +121,7 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
      */
     function _creditTo(uint16, address to, uint256 shares) internal override returns (uint256 amount) {
         amount = shares.toTokens(rebaseIndex());
-        if (isMainChain()) {
+        if (isMainChain) {
             _update(address(this), to, amount);
         } else {
             _update(address(0), to, amount);
@@ -156,28 +159,30 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
             nonce: _rebaseNonce()
         });
 
-        emit SendToChain(dstChainId, from, toAddress, amount);
+        emit SendToChain(dstChainId, from, toAddress, message.shares.toTokens(message.rebaseIndex));
 
         bytes memory lzPayload = abi.encode(PT_SEND, toAddress, message);
         _lzSend(dstChainId, lzPayload, refundAddress, zroPaymentAddress, adapterParams, msg.value);
     }
 
     /**
-     * @notice Acknowledges the receipt of tokens from another chain.
-     * @dev This function is called to handle the tokens that have been sent from a different chain. It decodes the
-     * payload to get the message containing shares, rebase index, and nonce. If the operation occurs on the main chain,
-     * it verifies that the nonce is not greater than the current nonce. Otherwise, it updates the rebase index and
-     * nonce based on the received message.
+     * @notice Acknowledges the receipt of tokens from another chain and credits the correct amount to the recipient's
+     * address.
+     * @dev Upon receiving a payload, this function decodes it to extract the destination address and the message
+     * content, which includes shares, rebase index, and nonce. If the current chain is not the main chain, it updates
+     * the rebase index and nonce accordingly. Then, it credits the token shares to the recipient's address and emits a
+     * `ReceiveFromChain` event.
+     *
+     * The function assumes that `_setRebaseIndex` handles the correctness of the rebase index and nonce update.
      *
      * @param srcChainId The source chain ID from which tokens are received.
-     * @param payload The payload containing the message and other details.
+     * @param payload The payload containing the encoded destination address and message with shares, rebase index, and
+     * nonce.
      */
     function _sendAck(uint16 srcChainId, bytes memory, uint64, bytes memory payload) internal override {
         (, bytes memory toAddressBytes, Message memory message) = abi.decode(payload, (uint16, bytes, Message));
 
-        if (isMainChain()) {
-            assert(message.nonce <= _rebaseNonce());
-        } else {
+        if (!isMainChain) {
             _setRebaseIndex(message.rebaseIndex, message.nonce);
         }
 

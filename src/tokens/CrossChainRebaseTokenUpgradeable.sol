@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
-import {ICrossChain} from "./interfaces/ICrossChain.sol";
+import {CrossChainToken} from "./CrossChainToken.sol";
 import {RebaseTokenUpgradeable} from "./RebaseTokenUpgradeable.sol";
 
 /**
@@ -18,10 +18,7 @@ import {RebaseTokenUpgradeable} from "./RebaseTokenUpgradeable.sol";
  *
  * It also includes functions for nonce management and verification.
  */
-abstract contract CrossChainRebaseTokenUpgradeable is RebaseTokenUpgradeable, ICrossChain {
-    error NonceTooLow(uint256 nonce, uint256 min);
-    error NonceTooHigh(uint256 nonce, uint256 max);
-
+abstract contract CrossChainRebaseTokenUpgradeable is RebaseTokenUpgradeable, CrossChainToken {
     /// @custom:storage-location erc7201:tangible.storage.CrossChainRebaseToken
     struct CrossChainRebaseTokenStorage {
         uint256 nonce;
@@ -71,43 +68,24 @@ abstract contract CrossChainRebaseTokenUpgradeable is RebaseTokenUpgradeable, IC
     }
 
     /**
-     * @notice Sets a new rebase index and updates the rebase nonce.
-     * @dev This function performs nonce verification before setting the new rebase index. If the nonce is verified, it
-     * updates the stored nonce and then calls the `_setRebaseIndex` function from the `RebaseTokenUpgradeable` contract
-     * to update the rebase index.
+     * @notice Sets a new rebase index if the provided nonce is valid and updates the rebase nonce if it's different
+     * from the current nonce.
+     * @dev This function checks that the provided nonce is greater than or equal to the current stored nonce before
+     * setting the new rebase index. If the nonce is greater than the stored nonce, the stored nonce is updated to the
+     * new value. It relies on `_setRebaseIndex` from the `RebaseTokenUpgradeable` contract to change the rebase index.
+     * If the provided nonce is less than the current nonce, no changes occur.
      *
      * @param index The new rebase index to set.
-     * @param nonce The rebase nonce for this operation.
+     * @param nonce The rebase nonce for this operation, which must be greater than or equal to the current nonce.
      */
     function _setRebaseIndex(uint256 index, uint256 nonce) internal virtual {
         CrossChainRebaseTokenStorage storage $ = _getCrossChainRebaseTokenStorage();
         uint256 rebaseNonce = $.nonce;
-        if (_verifyNonce(rebaseNonce, nonce)) {
-            $.nonce = nonce;
+        if (nonce >= rebaseNonce) {
             RebaseTokenUpgradeable._setRebaseIndex(index);
-        } else {
-            assert(RebaseTokenUpgradeable.rebaseIndex() == index);
-        }
-    }
-
-    /**
-     * @notice Verifies the rebase nonce for cross-chain operations.
-     * @dev This function checks if the provided nonce is valid for a rebase operation. If the contract is on the main
-     * chain, it checks whether the nonce is not too low or too high relative to the current block number.
-     *
-     * @param currentNonce The current stored rebase nonce.
-     * @param nonce The rebase nonce to verify.
-     * @return isNewer Returns true if the provided nonce is newer than the current stored nonce.
-     */
-    function _verifyNonce(uint256 currentNonce, uint256 nonce) private view returns (bool isNewer) {
-        if (isMainChain()) {
-            if (nonce > block.number) {
-                revert NonceTooHigh(nonce, block.number);
-            }
-            if (nonce <= currentNonce) {
-                revert NonceTooLow(nonce, currentNonce);
+            if (nonce != rebaseNonce) {
+                $.nonce = nonce;
             }
         }
-        isNewer = nonce > currentNonce;
     }
 }

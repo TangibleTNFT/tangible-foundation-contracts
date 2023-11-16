@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import {IERC165, ERC165} from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 
@@ -49,15 +49,20 @@ abstract contract OFTCoreUpgradeable is NonblockingLzAppUpgradeable, ERC165, IOF
     }
 
     /**
+     * @param endpoint The address of the LayerZero endpoint.
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor(address endpoint) NonblockingLzAppUpgradeable(endpoint) {}
+
+    /**
      * @dev Initializes the contract state for `OFTCoreUpgradeable`.
      * Calls the initialization functions of parent contracts.
      *
      * @param initialOwner The address of the initial owner.
-     * @param endpoint The address of the LayerZero endpoint.
      */
-    function __OFTCore_init(address initialOwner, address endpoint) internal onlyInitializing {
+    function __OFTCore_init(address initialOwner) internal onlyInitializing {
         __OFTCore_init_unchained();
-        __NonblockingLzApp_init(initialOwner, endpoint);
+        __NonblockingLzApp_init(initialOwner);
     }
 
     function __OFTCore_init_unchained() internal onlyInitializing {}
@@ -94,7 +99,7 @@ abstract contract OFTCoreUpgradeable is NonblockingLzAppUpgradeable, ERC165, IOF
     ) public view virtual override returns (uint256 nativeFee, uint256 zroFee) {
         // mock the payload for sendFrom()
         bytes memory payload = abi.encode(PT_SEND, toAddress, amount);
-        return lzEndpoint().estimateFees(dstChainId, address(this), payload, useZro, adapterParams);
+        return lzEndpoint.estimateFees(dstChainId, address(this), payload, useZro, adapterParams);
     }
 
     /**
