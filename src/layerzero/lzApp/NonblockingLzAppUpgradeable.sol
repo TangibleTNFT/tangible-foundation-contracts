@@ -183,7 +183,7 @@ abstract contract NonblockingLzAppUpgradeable is LzAppUpgradeable {
         require(keccak256(payload) == payloadHash, "NonblockingLzApp: invalid payload");
 
         // clear the stored message
-        payloadHash = bytes32(0);
+        _failedMessages[nonce] = bytes32(0);
 
         // execute the message. revert if it fails again
         _nonblockingLzReceive(srcChainId, srcAddress, nonce, payload);
