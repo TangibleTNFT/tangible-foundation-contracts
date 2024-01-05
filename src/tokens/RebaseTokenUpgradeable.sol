@@ -141,6 +141,14 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
     }
 
     /**
+     * @notice Returns whether rebasing is disabled for a specific account.
+     * @param account The address of the account to check.
+     */
+    function optedOut(address account) public view returns (bool) {
+        return _isRebaseDisabled(account);
+    }
+
+    /**
      * @notice Returns the total supply of the token, taking into account the current rebase index.
      * @dev This function fetches the `totalShares` and `rebaseIndex` from the contract's storage. It then calculates
      * the total supply of tokens by converting these shares to their equivalent token amount using the current rebase
