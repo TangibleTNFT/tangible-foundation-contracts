@@ -291,11 +291,9 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         } else {
             if (optOutTo) {
                 // At this point we know that `from` has not opted out.
-                $.totalShares -= shares;
                 ERC20Upgradeable._update(address(0), to, amount);
             } else {
                 // At this point we know that `from` has opted out.
-                $.totalShares += shares;
                 unchecked {
                     // Overflow not possible: `$.shares[to] + shares` is at most `$.totalShares`, which we know fits
                     // into a `uint256`.
