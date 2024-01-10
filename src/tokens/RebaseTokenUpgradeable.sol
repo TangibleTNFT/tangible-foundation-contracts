@@ -35,7 +35,11 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
     bytes32 private constant RebaseTokenStorageLocation =
         0x8a0c9d8ec1d9f8b365393c36404b40a33f47675e34246a2e186fbefd5ecd3b00;
 
-    function _getRebaseTokenStorage() private pure returns (RebaseTokenStorage storage $) {
+    function _getRebaseTokenStorage()
+        private
+        pure
+        returns (RebaseTokenStorage storage $)
+    {
         // slither-disable-next-line assembly
         assembly {
             $.slot := RebaseTokenStorageLocation
@@ -46,7 +50,11 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
     event RebaseEnabled(address indexed account);
     event RebaseDisabled(address indexed account);
 
-    error AmountExceedsBalance(address account, uint256 balance, uint256 amount);
+    error AmountExceedsBalance(
+        address account,
+        uint256 balance,
+        uint256 amount
+    );
     error RebaseOverflow();
 
     /**
@@ -58,7 +66,10 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      * @param name The name of the token.
      * @param symbol The symbol of the token.
      */
-    function __RebaseToken_init(string memory name, string memory symbol) internal onlyInitializing {
+    function __RebaseToken_init(
+        string memory name,
+        string memory symbol
+    ) internal onlyInitializing {
         __RebaseToken_init_unchained();
         __ERC20_init(name, symbol);
     }
@@ -80,7 +91,11 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
             uint256 balance = balanceOf(account);
             if (balance != 0) {
                 if (disable) {
-                    RebaseTokenUpgradeable._update(account, address(0), balance);
+                    RebaseTokenUpgradeable._update(
+                        account,
+                        address(0),
+                        balance
+                    );
                 } else {
                     ERC20Upgradeable._update(account, address(0), balance);
                 }
@@ -90,7 +105,11 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                 if (disable) {
                     ERC20Upgradeable._update(address(0), account, balance);
                 } else {
-                    RebaseTokenUpgradeable._update(address(0), account, balance);
+                    RebaseTokenUpgradeable._update(
+                        address(0),
+                        account,
+                        balance
+                    );
                 }
             }
             if (disable) emit RebaseDisabled(account);
@@ -105,7 +124,9 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      * @param account The address of the account to check.
      * @return disabled A boolean indicating whether rebasing is disabled (true) or enabled (false) for the account.
      */
-    function _isRebaseDisabled(address account) internal view returns (bool disabled) {
+    function _isRebaseDisabled(
+        address account
+    ) internal view returns (bool disabled) {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
         disabled = $.optOut[account];
     }
@@ -131,7 +152,9 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      * @param account The address of the account whose balance is to be fetched.
      * @return balance The balance of the specified account in tokens.
      */
-    function balanceOf(address account) public view virtual override returns (uint256 balance) {
+    function balanceOf(
+        address account
+    ) public view virtual override returns (uint256 balance) {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
         if ($.optOut[account]) {
             balance = ERC20Upgradeable.balanceOf(account);
@@ -156,9 +179,17 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      *
      * @return supply The total supply of tokens.
      */
-    function totalSupply() public view virtual override returns (uint256 supply) {
+    function totalSupply()
+        public
+        view
+        virtual
+        override
+        returns (uint256 supply)
+    {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
-        supply = $.totalShares.toTokens($.rebaseIndex) + ERC20Upgradeable.totalSupply();
+        supply =
+            $.totalShares.toTokens($.rebaseIndex) +
+            ERC20Upgradeable.totalSupply();
     }
 
     /**
@@ -189,7 +220,10 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      * @param from The address from which the tokens are to be transferred.
      * @return shares The number of shares equivalent to the `amount` to be transferred.
      */
-    function _transferableShares(uint256 amount, address from) internal view returns (uint256 shares) {
+    function _transferableShares(
+        uint256 amount,
+        address from
+    ) internal view returns (uint256 shares) {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
         shares = $.shares[from];
         uint256 index = $.rebaseIndex;
@@ -213,7 +247,11 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      * @param to The address to which tokens are transferred or minted. Address(0) implies burning.
      * @param amount The amount of tokens to be transferred.
      */
-    function _update(address from, address to, uint256 amount) internal virtual override {
+    function _update(
+        address from,
+        address to,
+        uint256 amount
+    ) internal virtual override {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
         bool optOutFrom = $.optOut[from];
         bool optOutTo = $.optOut[to];
@@ -236,6 +274,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                 shares = _transferableShares(amount, from);
                 unchecked {
                     // Underflow not possible: `shares <= $.shares[from] <= totalShares`.
+                    if (optOutTo && to != address(0)) $.totalShares -= shares;
                     $.shares[from] -= shares;
                 }
             }
@@ -261,8 +300,13 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                     // Overflow not possible: `$.shares[to] + shares` is at most `$.totalShares`, which we know fits
                     // into a `uint256`.
                     $.shares[to] += shares;
+                    if (optOutFrom) $.totalShares += shares;
                 }
-                emit Transfer(optOutFrom ? address(0) : from, to, shares.toTokens(index));
+                emit Transfer(
+                    optOutFrom ? address(0) : from,
+                    to,
+                    shares.toTokens(index)
+                );
             }
         }
     }
@@ -280,7 +324,9 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         // Using an unchecked block to avoid overflow checks, as overflow will be handled explicitly.
         uint256 _elasticSupply = shares.toTokens(index);
         unchecked {
-            if (_elasticSupply + ERC20Upgradeable.totalSupply() < _elasticSupply) {
+            if (
+                _elasticSupply + ERC20Upgradeable.totalSupply() < _elasticSupply
+            ) {
                 revert RebaseOverflow();
             }
         }
