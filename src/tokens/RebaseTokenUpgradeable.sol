@@ -47,7 +47,9 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
     event RebaseDisabled(address indexed account);
 
     error AmountExceedsBalance(address account, uint256 balance, uint256 amount);
+
     error RebaseOverflow();
+    error SupplyOverflow();
 
     /**
      * @notice Initializes the RebaseTokenUpgradeable contract.
@@ -141,6 +143,14 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
     }
 
     /**
+     * @notice Returns whether rebasing is disabled for a specific account.
+     * @param account The address of the account to check.
+     */
+    function optedOut(address account) public view returns (bool) {
+        return _isRebaseDisabled(account);
+    }
+
+    /**
      * @notice Returns the total supply of the token, taking into account the current rebase index.
      * @dev This function fetches the `totalShares` and `rebaseIndex` from the contract's storage. It then calculates
      * the total supply of tokens by converting these shares to their equivalent token amount using the current rebase
@@ -228,6 +238,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                 shares = _transferableShares(amount, from);
                 unchecked {
                     // Underflow not possible: `shares <= $.shares[from] <= totalShares`.
+                    if (optOutTo && to != address(0)) $.totalShares -= shares;
                     $.shares[from] -= shares;
                 }
             }
@@ -243,13 +254,16 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
             }
         } else {
             if (optOutTo) {
+                _checkTotalSupplyOverFlow(amount);
                 // At this point we know that `from` has not opted out.
                 ERC20Upgradeable._update(address(0), to, amount);
             } else {
+                // At this point we know that `from` has opted out.
                 unchecked {
                     // Overflow not possible: `$.shares[to] + shares` is at most `$.totalShares`, which we know fits
                     // into a `uint256`.
                     $.shares[to] += shares;
+                    if (optOutFrom) $.totalShares += shares;
                 }
                 emit Transfer(optOutFrom ? address(0) : from, to, shares.toTokens(index));
             }
@@ -271,6 +285,22 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         unchecked {
             if (_elasticSupply + ERC20Upgradeable.totalSupply() < _elasticSupply) {
                 revert RebaseOverflow();
+            }
+        }
+    }
+
+    /**
+     * @notice Checks for potential overflow conditions in USTB totalSupply.
+     * @dev This function ensures whenever a new mint, the addition of
+     * new mintedAmount + totalShares + ERC20Upgradeable.totalSupply() doesn't over flow
+     *
+     * @param amount The amount of tokens involved in the operation.
+     */
+
+    function _checkTotalSupplyOverFlow(uint256 amount) private view {
+        unchecked {
+            if (amount + totalSupply() < totalSupply()) {
+                revert SupplyOverflow();
             }
         }
     }

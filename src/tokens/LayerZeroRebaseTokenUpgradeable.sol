@@ -30,7 +30,8 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
     using RebaseTokenMath for uint256;
 
     struct Message {
-        uint256 shares;
+        bool optOut;
+        uint256 amountOrShares;
         uint256 rebaseIndex;
         uint256 nonce;
     }
@@ -84,20 +85,25 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
 
     /**
      * @notice Debits a specified amount of tokens from an account.
-     * @dev This function performs a series of checks and operations to debit tokens from an account. It calculates the
-     * share equivalent of the specified amount and updates the internal state accordingly. If the operation occurs on
-     * the main chain, the tokens are moved to the contract's address. Otherwise, the tokens are burned.
+     * @dev This function performs a series of checks and operations to debit tokens from an account. If the account
+     * has not opted out of rebasing, it calculates the share equivalent of the specified amount and updates the
+     * internal state accordingly. If the operation occurs on the main chain, the tokens are moved to the contract's
+     * address. Otherwise, the tokens are burned.
      *
      * @param from The address from which the tokens will be debited.
      * @param amount The amount to debit from the account.
-     * @return shares The share equivalent of the debited amount.
+     * @return amountOrShares The amount or share equivalent of the debited amount.
      */
     function _debitFrom(address from, uint16, bytes memory, uint256 amount)
         internal
         override
-        returns (uint256 shares)
+        returns (uint256 amountOrShares)
     {
-        shares = _transferableShares(amount, from);
+        if (_isRebaseDisabled(from)) {
+            amountOrShares = amount;
+        } else {
+            amountOrShares = _transferableShares(amount, from);
+        }
         if (from != msg.sender) {
             _spendAllowance(from, msg.sender, amount);
         }
@@ -109,23 +115,19 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
     }
 
     /**
-     * @notice Credits a specified number of shares to an account.
-     * @dev This function converts the specified shares to their token equivalent using the current rebase index. It
-     * then updates the internal state to reflect the credit operation. If the operation occurs on the main chain, the
-     * tokens are moved from the contract's address to the target account. Otherwise, new tokens are minted to the
-     * target account.
+     * @notice Credits a specified number of tokens to an account.
      *
      * @param to The address to which the shares will be credited.
-     * @param shares The number of shares to credit to the account.
-     * @return amount The token equivalent of the credited shares.
+     * @param amount The amount of tokens to credit to the account.
+     * @return The amount of tokens credited to the account.
      */
-    function _creditTo(uint16, address to, uint256 shares) internal override returns (uint256 amount) {
-        amount = shares.toTokens(rebaseIndex());
+    function _creditTo(uint16, address to, uint256 amount) internal override returns (uint256) {
         if (isMainChain) {
             _update(address(this), to, amount);
         } else {
             _update(address(0), to, amount);
         }
+        return amount;
     }
 
     /**
@@ -154,12 +156,18 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
         _checkAdapterParams(dstChainId, PT_SEND, adapterParams, NO_EXTRA_GAS);
 
         Message memory message = Message({
-            shares: _debitFrom(from, dstChainId, toAddress, amount),
+            amountOrShares: _debitFrom(from, dstChainId, toAddress, amount),
+            optOut: _isRebaseDisabled(from),
             rebaseIndex: rebaseIndex(),
             nonce: _rebaseNonce()
         });
 
-        emit SendToChain(dstChainId, from, toAddress, message.shares.toTokens(message.rebaseIndex));
+        emit SendToChain(
+            dstChainId,
+            from,
+            toAddress,
+            message.optOut ? message.amountOrShares : message.amountOrShares.toTokens(message.rebaseIndex)
+        );
 
         bytes memory lzPayload = abi.encode(PT_SEND, toAddress, message);
         _lzSend(dstChainId, lzPayload, refundAddress, zroPaymentAddress, adapterParams, msg.value);
@@ -187,7 +195,15 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
         }
 
         address to = toAddressBytes.toAddress(0);
-        uint256 amount = _creditTo(srcChainId, to, message.shares);
+        uint256 amount;
+
+        if (message.optOut) {
+            amount = message.amountOrShares;
+        } else {
+            amount = message.amountOrShares.toTokens(rebaseIndex());
+        }
+
+        amount = _creditTo(srcChainId, to, amount);
 
         emit ReceiveFromChain(srcChainId, to, amount);
     }
