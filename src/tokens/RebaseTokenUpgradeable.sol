@@ -55,7 +55,9 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         uint256 balance,
         uint256 amount
     );
+
     error RebaseOverflow();
+    error SupplyOverflow();
 
     /**
      * @notice Initializes the RebaseTokenUpgradeable contract.
@@ -290,6 +292,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
             }
         } else {
             if (optOutTo) {
+                _checkTotalSupplyOverFlow(amount);
                 // At this point we know that `from` has not opted out.
                 ERC20Upgradeable._update(address(0), to, amount);
             } else {
@@ -326,6 +329,22 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                 _elasticSupply + ERC20Upgradeable.totalSupply() < _elasticSupply
             ) {
                 revert RebaseOverflow();
+            }
+        }
+    }
+
+    /**
+     * @notice Checks for potential overflow conditions in USTB totalSupply.
+     * @dev This function ensures whenever a new mint, the addition of
+     * new mintedAmount + totalShares + ERC20Upgradeable.totalSupply() doesn't over flow
+     *
+     * @param amount The amount of tokens involved in the operation.
+     */
+
+    function _checkTotalSupplyOverFlow(uint256 amount) private view {
+        unchecked {
+            if (amount + totalSupply() < totalSupply()) {
+                revert SupplyOverflow();
             }
         }
     }
