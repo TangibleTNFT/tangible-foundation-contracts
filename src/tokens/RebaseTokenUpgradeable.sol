@@ -207,22 +207,26 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      */
     function _update(address from, address to, uint256 amount) internal virtual override {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
-        bool optOutFrom = $.optOut[from];
-        bool optOutTo = $.optOut[to];
+        bool optOutFrom = $.optOut[from] || from == address(0);
+        bool optOutTo = $.optOut[to] || to == address(0);
         if (optOutFrom && optOutTo) {
             ERC20Upgradeable._update(from, to, amount);
             return;
         }
         uint256 index = $.rebaseIndex;
-        uint256 shares = amount.toShares($.rebaseIndex);
+        uint256 shares = amount.toShares(index);
         if (from == address(0)) {
-            if (!optOutTo) {
-                uint256 totalShares = $.totalShares + shares; // Overflow check required
-                _checkRebaseOverflow(totalShares, index);
-                $.totalShares = totalShares;
-            }
+            // At this point we know that `to` has not opted out.
+            uint256 totalShares = $.totalShares + shares; // Overflow check required
+            _checkRebaseOverflow(totalShares, index);
+            $.totalShares = totalShares;
         } else {
             if (optOutFrom) {
+                uint256 sharesInTokens = shares.toTokens(index);
+                if (sharesInTokens != amount) {
+                    // account for rounding errors
+                    amount = sharesInTokens;
+                }
                 ERC20Upgradeable._update(from, address(0), amount);
             } else {
                 shares = _transferableShares(amount, from);
@@ -234,18 +238,26 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         }
 
         if (to == address(0)) {
-            if (!optOutFrom) {
-                unchecked {
-                    // Underflow not possible: `shares <= $.totalShares` or `shares <= $.shares[from] <= $.totalShares`.
-                    $.totalShares -= shares;
-                }
-                emit Transfer(from, address(0), shares.toTokens(index));
+            // At this point we know that `to` has not opted out.
+            unchecked {
+                // Underflow not possible: `shares <= $.totalShares` or `shares <= $.shares[from] <= $.totalShares`.
+                $.totalShares -= shares;
             }
+            emit Transfer(from, address(0), shares.toTokens(index));
         } else {
             if (optOutTo) {
                 // At this point we know that `from` has not opted out.
+                if (from != address(0)) {
+                    unchecked {
+                        $.totalShares -= shares;
+                    }
+                }
                 ERC20Upgradeable._update(address(0), to, amount);
             } else {
+                if (from != address(0)) {
+                    // At this point we know that `from` has opted out.
+                    $.totalShares += shares;
+                }
                 unchecked {
                     // Overflow not possible: `$.shares[to] + shares` is at most `$.totalShares`, which we know fits
                     // into a `uint256`.
