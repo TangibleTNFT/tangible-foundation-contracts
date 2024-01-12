@@ -36,6 +36,8 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
         uint256 nonce;
     }
 
+    error CannotBridgeWhenOptedOut(address account);
+
     /**
      * @param endpoint The endpoint for Layer Zero operations.
      * @custom:oz-upgrades-unsafe-allow constructor
@@ -153,6 +155,11 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
         address zroPaymentAddress,
         bytes memory adapterParams
     ) internal override {
+        if (optedOut(from)) {
+            // tokens cannot be bridged if the account has opted out of rebasing
+            revert CannotBridgeWhenOptedOut(from);
+        }
+
         _checkAdapterParams(dstChainId, PT_SEND, adapterParams, NO_EXTRA_GAS);
 
         Message memory message = Message({

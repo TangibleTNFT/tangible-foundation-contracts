@@ -224,7 +224,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
             return;
         }
         uint256 index = $.rebaseIndex;
-        uint256 shares = amount.toShares($.rebaseIndex);
+        uint256 shares = amount.toShares(index);
         if (from == address(0)) {
             if (!optOutTo) {
                 uint256 totalShares = $.totalShares + shares; // Overflow check required
@@ -233,6 +233,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
             }
         } else {
             if (optOutFrom) {
+                amount = shares.toTokens(index);
                 ERC20Upgradeable._update(from, address(0), amount);
             } else {
                 shares = _transferableShares(amount, from);
