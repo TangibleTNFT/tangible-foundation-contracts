@@ -251,7 +251,6 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                     // Underflow not possible: `shares <= $.totalShares` or `shares <= $.shares[from] <= $.totalShares`.
                     $.totalShares -= shares;
                 }
-                emit Transfer(from, address(0), shares.toTokens(index));
             }
         } else {
             if (optOutTo) {
@@ -266,9 +265,10 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                     $.shares[to] += shares;
                     if (optOutFrom) $.totalShares += shares;
                 }
-                emit Transfer(optOutFrom ? address(0) : from, to, shares.toTokens(index));
             }
         }
+
+        emit Transfer(optOutFrom ? address(0) : from, optOutTo ? address(0) : to, shares.toTokens(index));
     }
 
     /**
