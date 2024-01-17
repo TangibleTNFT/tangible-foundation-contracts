@@ -226,7 +226,9 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         uint256 index = $.rebaseIndex;
         uint256 shares = amount.toShares(index);
         if (from == address(0)) {
-            if (!optOutTo) {
+            if (optOutTo) {
+                _checkTotalSupplyOverFlow(amount);
+            } else {
                 uint256 totalShares = $.totalShares + shares; // Overflow check required
                 _checkRebaseOverflow(totalShares, index);
                 $.totalShares = totalShares;
@@ -254,7 +256,6 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
             }
         } else {
             if (optOutTo) {
-                _checkTotalSupplyOverFlow(amount);
                 // At this point we know that `from` has not opted out.
                 ERC20Upgradeable._update(address(0), to, amount);
             } else {
@@ -263,7 +264,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
                     // Overflow not possible: `$.shares[to] + shares` is at most `$.totalShares`, which we know fits
                     // into a `uint256`.
                     $.shares[to] += shares;
-                    if (optOutFrom) $.totalShares += shares;
+                    if (optOutFrom && from != address(0)) $.totalShares += shares;
                 }
             }
         }
@@ -300,7 +301,8 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
 
     function _checkTotalSupplyOverFlow(uint256 amount) private view {
         unchecked {
-            if (amount + totalSupply() < totalSupply()) {
+            uint256 _totalSupply = totalSupply();
+            if (amount + _totalSupply < _totalSupply) {
                 revert SupplyOverflow();
             }
         }
