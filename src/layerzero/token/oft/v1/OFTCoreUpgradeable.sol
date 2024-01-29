@@ -215,7 +215,7 @@ abstract contract OFTCoreUpgradeable is NonblockingLzAppUpgradeable, ERC165, IOF
 
         amount = _creditTo(srcChainId, to, amount);
 
-        //send the acknowledgement to the reciever for the amount credited from the source chain
+        // send the acknowledgement to the receiver for the amount credited from the source chain
         try IOFTSubscriber(to).notifyCredit(srcChainId, address(this), src, amount) {} catch {}
 
         emit ReceiveFromChain(srcChainId, to, amount);
