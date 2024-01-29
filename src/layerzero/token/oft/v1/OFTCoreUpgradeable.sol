@@ -8,6 +8,8 @@ import {BytesLib} from "@layerzerolabs/contracts/libraries/BytesLib.sol";
 
 import {NonblockingLzAppUpgradeable} from "../../../lzApp/NonblockingLzAppUpgradeable.sol";
 
+import {IOFTSubscriber} from "../interfaces/IOFTSubscriber.sol";
+
 /**
  * @title OFTCoreUpgradeable
  * @dev This contract extends NonblockingLzAppUpgradeable to provide a core implementation for OFT (On-Chain Forwarding
@@ -210,6 +212,10 @@ abstract contract OFTCoreUpgradeable is NonblockingLzAppUpgradeable, ERC165, IOF
         address to = toAddressBytes.toAddress(0);
 
         amount = _creditTo(srcChainId, to, amount);
+
+        //notify the credited amount received from the source chain.
+        try IOFTSubscriber(to).notifyCredit(srcChainId, address(this), amount) {} catch {}
+
         emit ReceiveFromChain(srcChainId, to, amount);
     }
 
