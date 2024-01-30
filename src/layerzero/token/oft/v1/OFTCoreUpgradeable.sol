@@ -8,6 +8,8 @@ import {BytesLib} from "@layerzerolabs/contracts/libraries/BytesLib.sol";
 
 import {NonblockingLzAppUpgradeable} from "../../../lzApp/NonblockingLzAppUpgradeable.sol";
 
+import {IOFTSubscriber} from "../interfaces/IOFTSubscriber.sol";
+
 /**
  * @title OFTCoreUpgradeable
  * @dev This contract extends NonblockingLzAppUpgradeable to provide a core implementation for OFT (On-Chain Forwarding
@@ -202,14 +204,20 @@ abstract contract OFTCoreUpgradeable is NonblockingLzAppUpgradeable, ERC165, IOF
      * This function is called internally when a PT_SEND packet type is received.
      *
      * @param srcChainId The ID of the source chain from which the tokens were sent.
+     * @param srcAddressBytes The address on the source chain from which the message originated.
      * @param payload The payload containing the details of the sent tokens.
      */
-    function _sendAck(uint16 srcChainId, bytes memory, uint64, bytes memory payload) internal virtual {
+    function _sendAck(uint16 srcChainId, bytes memory srcAddressBytes, uint64, bytes memory payload) internal virtual {
         (, bytes memory toAddressBytes, uint256 amount) = abi.decode(payload, (uint16, bytes, uint256));
 
+        address src = srcAddressBytes.toAddress(0);
         address to = toAddressBytes.toAddress(0);
 
         amount = _creditTo(srcChainId, to, amount);
+
+        // send the acknowledgement to the receiver for the amount credited from the source chain
+        try IOFTSubscriber(to).notifyCredit(srcChainId, address(this), src, amount) {} catch {}
+
         emit ReceiveFromChain(srcChainId, to, amount);
     }
 
