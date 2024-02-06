@@ -298,7 +298,6 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      *
      * @param amount The amount of tokens involved in the operation.
      */
-
     function _checkTotalSupplyOverFlow(uint256 amount) private view {
         unchecked {
             uint256 _totalSupply = totalSupply();

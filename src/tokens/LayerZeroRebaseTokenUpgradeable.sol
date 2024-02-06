@@ -6,6 +6,7 @@ import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/
 
 import {BytesLib} from "@layerzerolabs/contracts/libraries/BytesLib.sol";
 import {OFTUpgradeable} from "@layerzerolabs/contracts-upgradeable/token/oft/v1/OFTUpgradeable.sol";
+import {IOFTSubscriber} from "@layerzerolabs/contracts-upgradeable/token/oft/interfaces/IOFTSubscriber.sol";
 
 import {RebaseTokenMath} from "../libraries/RebaseTokenMath.sol";
 import {CrossChainRebaseTokenUpgradeable} from "./CrossChainRebaseTokenUpgradeable.sol";
@@ -164,14 +165,9 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
             nonce: _rebaseNonce()
         });
 
-        emit SendToChain(
-            dstChainId,
-            from,
-            toAddress,
-            message.shares.toTokens(message.rebaseIndex)
-        );
+        emit SendToChain(dstChainId, from, toAddress, message.shares.toTokens(message.rebaseIndex));
 
-        bytes memory lzPayload = abi.encode(PT_SEND, toAddress, message);
+        bytes memory lzPayload = abi.encode(PT_SEND, msg.sender, from, toAddress, message);
         _lzSend(dstChainId, lzPayload, refundAddress, zroPaymentAddress, adapterParams, msg.value);
     }
 
@@ -186,21 +182,64 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
      * The function assumes that `_setRebaseIndex` handles the correctness of the rebase index and nonce update.
      *
      * @param srcChainId The source chain ID from which tokens are received.
+     * @param srcAddressBytes The address on the source chain from which the message originated.
      * @param payload The payload containing the encoded destination address and message with shares, rebase index, and
      * nonce.
      */
-    function _sendAck(uint16 srcChainId, bytes memory, uint64, bytes memory payload) internal override {
-        (, bytes memory toAddressBytes, Message memory message) = abi.decode(payload, (uint16, bytes, Message));
+    function _sendAck(uint16 srcChainId, bytes memory srcAddressBytes, uint64, bytes memory payload)
+        internal
+        override
+    {
+        (, address initiator, address from, bytes memory toAddressBytes, Message memory message) =
+            abi.decode(payload, (uint16, address, address, bytes, Message));
 
         if (!isMainChain) {
             _setRebaseIndex(message.rebaseIndex, message.nonce);
         }
 
+        address src = srcAddressBytes.toAddress(0);
         address to = toAddressBytes.toAddress(0);
         uint256 amount;
 
         amount = _creditTo(srcChainId, to, message.shares);
 
+        _tryNotifyReceiver(srcChainId, initiator, from, src, to, amount);
+
         emit ReceiveFromChain(srcChainId, to, amount);
+    }
+
+    /**
+     * @dev Attempts to notify the receiver of the credited amount.
+     * Inline assembly is used to call the `notifyCredit` function on the receiver in order to prevent LayerZero's
+     * ExcessivelySafeCall library from tagging the transaction as failed when this call fails.
+     *
+     * @param srcChainId The ID of the source chain where the message originated.
+     * @param initiator The address of the initiator on the source chain.
+     * @param sender The address on the source chain from which the tokens were sent.
+     * @param receiver The address of the receiver who received tokens.
+     * @param amount The amount of tokens credited.
+     */
+    function _tryNotifyReceiver(
+        uint16 srcChainId,
+        address initiator,
+        address sender,
+        address,
+        address receiver,
+        uint256 amount
+    ) internal returns (bool success) {
+        bytes memory data =
+            abi.encodeCall(IOFTSubscriber.notifyCredit, (srcChainId, initiator, sender, address(this), amount));
+        assembly {
+            success :=
+                call(
+                    gas(), // gas remaining
+                    receiver, // destination address
+                    0, // no ether
+                    add(data, 32), // input buffer (starts after the first 32 bytes in the `data` array)
+                    mload(data), // input length (loaded from the first 32 bytes in the `data` array)
+                    0, // output buffer
+                    0 // output length
+                )
+        }
     }
 }
