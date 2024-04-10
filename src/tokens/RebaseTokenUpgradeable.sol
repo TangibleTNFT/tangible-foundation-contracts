@@ -269,7 +269,12 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
             }
         }
 
-        emit Transfer(optOutFrom ? address(0) : from, optOutTo ? address(0) : to, shares.toTokens(index));
+        if (optOutFrom) from = address(0);
+        if (optOutTo) to = address(0);
+
+        if (from != to) {
+            emit Transfer(from, to, shares.toTokens(index));
+        }
     }
 
     /**
