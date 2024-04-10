@@ -42,7 +42,7 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
         }
     }
 
-    event RebaseIndexUpdated(address updatedBy, uint256 index);
+    event RebaseIndexUpdated(address updatedBy, uint256 index, uint256 totalSupplyBefore, uint256 totalSupplyAfter);
     event RebaseEnabled(address indexed account);
     event RebaseDisabled(address indexed account);
 
@@ -173,10 +173,14 @@ abstract contract RebaseTokenUpgradeable is ERC20Upgradeable {
      */
     function _setRebaseIndex(uint256 index) internal virtual {
         RebaseTokenStorage storage $ = _getRebaseTokenStorage();
-        if ($.rebaseIndex != index) {
+        uint256 currentIndex = $.rebaseIndex;
+        if (currentIndex != index) {
             $.rebaseIndex = index;
             _checkRebaseOverflow($.totalShares, index);
-            emit RebaseIndexUpdated(msg.sender, index);
+            uint256 constantSupply = ERC20Upgradeable.totalSupply();
+            uint256 totalSupplyBefore = $.totalShares.toTokens(currentIndex) + constantSupply;
+            uint256 totalSupplyAfter = $.totalShares.toTokens(index) + constantSupply;
+            emit RebaseIndexUpdated(msg.sender, index, totalSupplyBefore, totalSupplyAfter);
         }
     }
 
