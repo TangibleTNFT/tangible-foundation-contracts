@@ -97,6 +97,7 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
      */
     function _debitFrom(address from, uint16, bytes memory, uint256 amount)
         internal
+        virtual
         override
         returns (uint256 shares)
     {
@@ -118,7 +119,7 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
      * @param shares The number of shares to credit to the account.
      * @return amount The token equivalent of the credited shares.
      */
-    function _creditTo(uint16, address to, uint256 shares) internal override returns (uint256 amount) {
+    function _creditTo(uint16, address to, uint256 shares) internal virtual override returns (uint256 amount) {
         amount = shares.toTokens(rebaseIndex());
         if (isMainChain) {
             _update(address(this), to, amount);
@@ -150,7 +151,7 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
         address payable refundAddress,
         address zroPaymentAddress,
         bytes memory adapterParams
-    ) internal override {
+    ) internal virtual override {
         if (optedOut(from)) {
             // tokens cannot be bridged if the account has opted out of rebasing
             revert CannotBridgeWhenOptedOut(from);
@@ -187,6 +188,7 @@ abstract contract LayerZeroRebaseTokenUpgradeable is CrossChainRebaseTokenUpgrad
      */
     function _sendAck(uint16 srcChainId, bytes memory srcAddressBytes, uint64, bytes memory payload)
         internal
+        virtual
         override
     {
         (, address initiator, address from, bytes memory toAddressBytes, Message memory message) =
